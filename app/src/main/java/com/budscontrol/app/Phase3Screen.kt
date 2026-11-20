@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.budscontrol.app.bluetooth.CustomEqPreset
 import com.budscontrol.app.bluetooth.EarbudSnapshot
 import com.budscontrol.app.bluetooth.RfcommClient
 import com.budscontrol.app.bluetooth.RfcommListener
@@ -36,6 +38,7 @@ fun Phase3Screen() {
     val context = LocalContext.current
     val manager = remember { context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager }
     val adapter = remember { manager.adapter }
+    val notifier = remember { LowBatteryNotifier(context) }
     var refresh by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf("Not connected") }
     var connected by remember { mutableStateOf(false) }
@@ -52,6 +55,7 @@ fun Phase3Screen() {
                 connected = isConnected
             }
             override fun onSnapshot(value: EarbudSnapshot) { snapshot = value }
+            override fun onBatteryLevel(part: String, level: Int) { notifier.show(part, level) }
         })
     }
     DisposableEffect(client) { onDispose { client.disconnect() } }
@@ -73,14 +77,16 @@ fun Phase3Screen() {
                     NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Default.Bluetooth, null) }, label = { Text("Home") })
                     NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Default.Equalizer, null) }, label = { Text("Sound") })
                     NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Default.BatteryFull, null) }, label = { Text("Battery") })
-                    NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Controls") })
+                    NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Default.TouchApp, null) }, label = { Text("Touch") })
+                    NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Controls") })
                 }
             }
         ) { padding ->
             when (tab) {
                 0 -> HomeTab(Modifier.padding(padding), devices, permissionGranted, bluetoothOn, status, connected, snapshot, { refresh++ }, { client.connect(it) }, { client.disconnect() })
-                1 -> SoundTab(Modifier.padding(padding), snapshot, connected, { client.selectEqPreset(it) })
+                1 -> SoundTab(Modifier.padding(padding), snapshot, connected, { client.selectEqPreset(it) }, { client.createCustomEqPreset(it) }, { id, gains -> client.saveCustomEqPreset(id, gains) })
                 2 -> BatteryTab(Modifier.padding(padding), snapshot)
+                3 -> TouchTab(Modifier.padding(padding), snapshot, connected, { side, action, fn -> client.setGestureBinding(side, action, fn) })
                 else -> ControlsTab(Modifier.padding(padding), snapshot, connected, { client.setFindMyEarbuds(true) }, { client.setFindMyEarbuds(false) })
             }
         }
@@ -104,19 +110,12 @@ private fun Title(title: String, subtitle: String) {
 
 @Composable
 private fun HomeTab(
-    modifier: Modifier,
-    devices: List<BluetoothDevice>,
-    permissionGranted: Boolean,
-    bluetoothOn: Boolean,
-    status: String,
-    connected: Boolean,
-    snapshot: EarbudSnapshot,
-    refresh: () -> Unit,
-    connect: (BluetoothDevice) -> Unit,
-    disconnect: () -> Unit
+    modifier: Modifier, devices: List<BluetoothDevice>, permissionGranted: Boolean,
+    bluetoothOn: Boolean, status: String, connected: Boolean, snapshot: EarbudSnapshot,
+    refresh: () -> Unit, connect: (BluetoothDevice) -> Unit, disconnect: () -> Unit
 ) {
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Title("Buds Control", "OnePlus Nord Buds 2R · Phase 3") }
+        item { Title("Buds Control", "OnePlus Nord Buds 2R · Phase 4") }
         item {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -127,53 +126,62 @@ private fun HomeTab(
                 Text(status, color = Color.Gray)
                 if (connected) OutlinedButton(onClick = disconnect) { Text("Disconnect") }
                 OutlinedButton(onClick = refresh) { Text("Refresh paired devices") }
-                if (snapshot.productId != null) {
-                    Text("Product ID: ${snapshot.productId}", fontWeight = FontWeight.SemiBold)
-                    Text(if (snapshot.identified) "Nord Buds 2R identified" else "Unsupported model — device writes disabled", color = if (snapshot.identified) Color(0xFF16834A) else OnePlusRed)
+                snapshot.productId?.let {
+                    Text("Product ID: $it", fontWeight = FontWeight.SemiBold)
+                    Text(if (snapshot.identified) "Nord Buds 2R identified" else "Unsupported model — device writes disabled",
+                        color = if (snapshot.identified) Color(0xFF16834A) else OnePlusRed)
                 }
             }
         }
-        if (!permissionGranted) {
-            item { Text("Grant Nearby devices permission, then reopen the app.", color = OnePlusRed) }
-        } else if (devices.isEmpty()) {
-            item { Text("No paired devices found. Pair Nord Buds 2R in Android Bluetooth settings first.", color = Color.Gray) }
-        } else {
+        if (!permissionGranted) item { Text("Grant Nearby devices permission, then reopen the app.", color = OnePlusRed) }
+        else if (devices.isEmpty()) item { Text("Pair Nord Buds 2R in Android Bluetooth settings first.", color = Color.Gray) }
+        else {
             item { Text("Paired devices", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
             items(devices) { device ->
                 Panel {
                     Text(device.name ?: "Unnamed device", fontWeight = FontWeight.SemiBold)
                     Text(device.address, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { connect(device) }, modifier = Modifier.fillMaxWidth()) { Text("Connect using RFCOMM") }
+                    Button(onClick = { connect(device) }, modifier = Modifier.fillMaxWidth()) { Text("Connect") }
                 }
             }
         }
         item {
             Panel {
                 Text("Compatibility", fontWeight = FontWeight.SemiBold)
-                Info("Equalizer", if (snapshot.supportsEq) "Advertised by device capability bitmap" else "Waiting for model handshake")
-                Info("Tap customization", if (snapshot.supportsGestures) "Gesture table readable; editing deferred" else "Waiting for model handshake")
-                Info("Find My Earbuds", if (snapshot.supportsFind) "Advertised by device capability bitmap" else "Waiting for model handshake")
-                Info("ANC", "Not supported on Nord Buds 2R")
-                Info("Call noise reduction", "Built-in dual-mic AI call algorithm; no separate app toggle verified")
+                Info("Custom EQ", if (snapshot.supportsCustomEq) "Available" else "Waiting for capability check")
+                Info("Touch controls", if (snapshot.supportsGestures) "Available" else "Waiting for capability check")
+                Info("Find My Earbuds", if (snapshot.supportsFind) "Available" else "Waiting for capability check")
+                Info("Auto reconnect", "Up to 3 retries while this screen remains active")
             }
         }
     }
 }
 
 @Composable
-private fun SoundTab(modifier: Modifier, snapshot: EarbudSnapshot, connected: Boolean, selectPreset: (Int) -> Unit) {
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Title("Sound Studio", "Change the earbud's built-in EQ preset") }
-        item {
-            Panel {
-                Text("Current earbud preset", fontWeight = FontWeight.SemiBold)
-                Text(snapshot.eqStatus, color = Color.Gray)
-                Text("Preset selection is sent to the earbuds and then read back. No phone-wide audio EQ is simulated.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-            }
+private fun SoundTab(
+    modifier: Modifier, snapshot: EarbudSnapshot, connected: Boolean,
+    selectPreset: (Int) -> Unit, createPreset: (String) -> Unit, savePreset: (Int, List<Int>) -> Unit
+) {
+    var newName by remember { mutableStateOf("My Sound") }
+    var selectedId by remember { mutableIntStateOf(-1) }
+    var gains by remember { mutableStateOf(List(6) { 0 }) }
+    val selected = snapshot.customEqPresets.firstOrNull { it.id == selectedId }
+        ?: snapshot.customEqPresets.firstOrNull { it.selected }
+        ?: snapshot.customEqPresets.firstOrNull()
+
+    LaunchedEffect(selected?.id, selected?.gains) {
+        if (selected != null) {
+            selectedId = selected.id
+            gains = selected.gains
         }
+    }
+
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Title("Sound Studio", "Built-in presets and custom 6-band EQ") }
         item {
             Panel {
-                Text("Sound Master Equalizer", fontWeight = FontWeight.SemiBold)
+                Text("Built-in presets", fontWeight = FontWeight.SemiBold)
+                Text(snapshot.eqStatus, color = Color.Gray)
                 listOf(0 to "Balanced", 1 to "Bold", 2 to "Bass").forEach { (slot, name) ->
                     Button(
                         onClick = { selectPreset(slot) },
@@ -182,28 +190,91 @@ private fun SoundTab(modifier: Modifier, snapshot: EarbudSnapshot, connected: Bo
                         colors = ButtonDefaults.buttonColors(containerColor = if (snapshot.eqSlot == slot) OnePlusRed else Color(0xFF34363B))
                     ) { Text(name) }
                 }
-                if (!snapshot.identified) Text("Connect and identify Nord Buds 2R to enable controls.", color = Color.Gray)
             }
         }
         item {
             Panel {
-                Text("Custom EQ", fontWeight = FontWeight.SemiBold)
-                Text("The model advertises custom EQ capability. Custom-band editing is deferred until preset-list read/write and read-back validation are complete.", color = Color.Gray)
+                Text("Custom EQ Studio", fontWeight = FontWeight.SemiBold)
+                Text(snapshot.customEqStatus, color = Color.Gray)
+                OutlinedTextField(value = newName, onValueChange = { newName = it.take(24) }, label = { Text("Preset name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Button(
+                    onClick = { createPreset(newName) },
+                    enabled = connected && snapshot.supportsCustomEq && snapshot.customEqPresets.size < 3 && newName.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Create custom preset") }
+                Text("Up to 3 custom presets. Each band uses the device-supported -6 to +6 gain range.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
             }
+        }
+        items(snapshot.customEqPresets, key = { it.id }) { preset ->
+            CustomEqCard(
+                preset = preset,
+                selected = selected?.id == preset.id,
+                gains = if (selected?.id == preset.id) gains else preset.gains,
+                enabled = connected && snapshot.supportsCustomEq,
+                onSelect = { selectedId = preset.id; gains = preset.gains; savePreset(preset.id, preset.gains) },
+                onGain = { band, value -> if (selected?.id == preset.id) gains = gains.toMutableList().also { it[band] = value } },
+                onSave = { savePreset(preset.id, gains) }
+            )
+        }
+        if (snapshot.customEqPresets.isEmpty()) {
+            item { Text("No custom presets reported by the earbuds yet.", color = Color.Gray) }
         }
     }
 }
 
 @Composable
+private fun CustomEqCard(
+    preset: CustomEqPreset, selected: Boolean, gains: List<Int>, enabled: Boolean,
+    onSelect: () -> Unit, onGain: (Int, Int) -> Unit, onSave: () -> Unit
+) {
+    Panel {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(preset.name, fontWeight = FontWeight.SemiBold)
+                Text("Device preset #${preset.id}${if (preset.selected) " · active" else ""}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+            }
+            OutlinedButton(onClick = onSelect, enabled = enabled) { Text(if (selected) "Selected" else "Edit") }
+        }
+        if (selected) {
+            preset.frequencies.forEachIndexed { index, frequency ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(freqLabel(frequency), fontWeight = FontWeight.Medium)
+                        Text("${gains.getOrElse(index) { 0 }} dB", color = Color.Gray)
+                    }
+                    Slider(
+                        value = gains.getOrElse(index) { 0 }.toFloat(),
+                        onValueChange = { onGain(index, it.toInt()) },
+                        valueRange = -6f..6f,
+                        steps = 11,
+                        enabled = enabled
+                    )
+                }
+            }
+            Button(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text("Save to earbuds") }
+        }
+    }
+}
+
+private fun freqLabel(hz: Int): String = when (hz) {
+    1000 -> "1 kHz"
+    4000 -> "4 kHz"
+    8000 -> "8 kHz"
+    16000 -> "16 kHz"
+    else -> "$hz Hz"
+}
+
+@Composable
 private fun BatteryTab(modifier: Modifier, snapshot: EarbudSnapshot) {
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Title("Battery Center", "Live RFCOMM readings · no estimated values") }
+        item { Title("Battery Center", "Live device reports and low-battery alerts") }
         item {
             Panel {
                 BatteryValue("Left earbud", snapshot.leftBattery)
                 BatteryValue("Right earbud", snapshot.rightBattery)
                 BatteryValue("Charging case", snapshot.caseBattery)
-                Text("The case may report a level only while its lid is open. Missing values are shown as Not reported.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                Text("A notification is raised at 20% or below when a fresh battery report arrives. The case may report only while its lid is open.",
+                    color = Color.Gray, style = MaterialTheme.typography.bodySmall)
             }
         }
         item {
@@ -213,6 +284,82 @@ private fun BatteryTab(modifier: Modifier, snapshot: EarbudSnapshot) {
             }
         }
     }
+}
+
+@Composable
+private fun TouchTab(
+    modifier: Modifier, snapshot: EarbudSnapshot, connected: Boolean,
+    setBinding: (Int, Int, Int) -> Unit
+) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Title("Touch Control Studio", "Configure left and right earbuds independently") }
+        item {
+            Panel {
+                Text(snapshot.gestureStatus, color = Color.Gray)
+                Text("Each change rewrites the current table, then reads it back. Unsupported actions are not offered.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        listOf(1 to "Left earbud", 2 to "Right earbud").forEach { (side, label) ->
+            item {
+                Panel {
+                    Text(label, fontWeight = FontWeight.SemiBold)
+                    listOf(1 to "Single tap", 2 to "Double tap", 3 to "Triple tap", 6 to "Long press").forEach { (action, actionLabel) ->
+                        val current = snapshot.gestureBindings.firstOrNull {
+                            it.deviceType == side && it.button == 1 && it.action == action
+                        }?.function ?: 0
+                        GestureActionPicker(
+                            title = actionLabel,
+                            current = current,
+                            options = gestureOptions(action),
+                            enabled = connected && snapshot.identified && snapshot.supportsGestures,
+                            onChoose = { setBinding(side, action, it) }
+                        )
+                    }
+                }
+            }
+        }
+        item { Text("ANC is not offered for this model's gesture menu. The app does not invent ANC controls.", color = Color.Gray) }
+    }
+}
+
+@Composable
+private fun GestureActionPicker(title: String, current: Int, options: List<Pair<Int, String>>, enabled: Boolean, onChoose: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, fontWeight = FontWeight.Medium)
+        Box {
+            OutlinedButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+                Text(actionName(current))
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (code, name) ->
+                    DropdownMenuItem(text = { Text(name) }, onClick = { expanded = false; onChoose(code) })
+                }
+            }
+        }
+    }
+}
+
+private fun gestureOptions(action: Int): List<Pair<Int, String>> {
+    val codes = when (action) {
+        1 -> listOf(0x00, 0x01)
+        2 -> listOf(0x00, 0x01, 0x03, 0x05, 0x06, 0x11)
+        3 -> listOf(0x00, 0x03, 0x05, 0x06, 0x11)
+        6 -> listOf(0x00, 0x0D)
+        else -> listOf(0x00)
+    }
+    return codes.map { it to actionName(it) }
+}
+
+private fun actionName(code: Int): String = when (code) {
+    0x00 -> "None"
+    0x01 -> "Play / Pause"
+    0x03 -> "Voice Assistant"
+    0x05 -> "Previous Track"
+    0x06 -> "Next Track"
+    0x0D -> "Switch Device"
+    0x11 -> "Game Mode"
+    else -> "Unsupported"
 }
 
 @Composable
@@ -229,21 +376,15 @@ private fun ControlsTab(modifier: Modifier, snapshot: EarbudSnapshot, connected:
                 OutlinedButton(onClick = stopFind, enabled = connected && snapshot.identified && snapshot.supportsFind, modifier = Modifier.fillMaxWidth()) {
                     Text("Stop locating tone")
                 }
-                Text("A command acknowledgement does not prove the tone was heard. Confirm the sound during physical testing.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                Text("A command acknowledgement does not prove the tone was heard. Confirm it physically.", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
             }
         }
         item {
             Panel {
-                Text("Tap customization", fontWeight = FontWeight.SemiBold)
-                Info("Gesture table", snapshot.gestureCount?.let { "$it entries read from earbuds" } ?: "Not yet read")
-                Text(snapshot.gestureRaw, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                Text("This phase reads the real gesture table only. Editing stays disabled until action-option mapping is validated for this exact model.", color = Color.Gray)
-            }
-        }
-        item {
-            Panel {
-                Info("Call noise reduction", "Built into earbuds; no separate toggle exposed")
-                Info("Active Noise Cancellation", "Not supported by Nord Buds 2R")
+                Info("Automatic reconnect", "Up to 3 retries with increasing delay after an unexpected link loss")
+                Info("Low battery alert", "Notification at 20% or below on fresh battery reports")
+                Info("ANC", "Not supported on Nord Buds 2R")
+                Info("Call noise reduction", "Built-in dual-mic AI call processing; no separate toggle exposed")
             }
         }
     }
