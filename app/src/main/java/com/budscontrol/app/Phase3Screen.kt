@@ -30,8 +30,12 @@ import com.budscontrol.app.bluetooth.EarbudSnapshot
 import com.budscontrol.app.bluetooth.RfcommClient
 import com.budscontrol.app.bluetooth.RfcommListener
 
-private val OnePlusRed = Color(0xFFEB4D4B)
-private val Page = Color(0xFFF5F6F8)
+private val OnePlusRed = Color(0xFFDF3438)
+private val Page = Color(0xFFF4F5F7)
+private val Ink = Color(0xFF17191D)
+private val Muted = Color(0xFF777D87)
+private val SoftRed = Color(0xFFFFECEC)
+private val Border = Color(0xFFE8E9ED)
 
 @Composable
 fun Phase3Screen() {
@@ -69,16 +73,23 @@ fun Phase3Screen() {
         try { adapter?.isEnabled == true } catch (_: SecurityException) { false }
     }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = OnePlusRed, background = Page, surface = Color.White)) {
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = OnePlusRed, onPrimary = Color.White,
+            background = Page, surface = Color.White,
+            onSurface = Ink, surfaceVariant = Color(0xFFF0F1F4),
+            onSurfaceVariant = Muted
+        )
+    ) {
         Scaffold(
             containerColor = Page,
             bottomBar = {
-                NavigationBar(containerColor = Color.White) {
-                    NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Default.Bluetooth, null) }, label = { Text("Home") })
-                    NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Default.Equalizer, null) }, label = { Text("Sound") })
-                    NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Default.BatteryFull, null) }, label = { Text("Battery") })
-                    NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Default.TouchApp, null) }, label = { Text("Touch") })
-                    NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Controls") })
+                NavigationBar(containerColor = Color.White, tonalElevation = 8.dp) {
+                    NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Default.Bluetooth, null) }, label = { Text("Home") }, colors = NavigationBarItemDefaults.colors(selectedIconColor = OnePlusRed, selectedTextColor = OnePlusRed, indicatorColor = SoftRed))
+                    NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Default.Equalizer, null) }, label = { Text("Sound") }, colors = NavigationBarItemDefaults.colors(selectedIconColor = OnePlusRed, selectedTextColor = OnePlusRed, indicatorColor = SoftRed))
+                    NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Default.BatteryFull, null) }, label = { Text("Battery") }, colors = NavigationBarItemDefaults.colors(selectedIconColor = OnePlusRed, selectedTextColor = OnePlusRed, indicatorColor = SoftRed))
+                    NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Default.TouchApp, null) }, label = { Text("Touch") }, colors = NavigationBarItemDefaults.colors(selectedIconColor = OnePlusRed, selectedTextColor = OnePlusRed, indicatorColor = SoftRed))
+                    NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Controls") }, colors = NavigationBarItemDefaults.colors(selectedIconColor = OnePlusRed, selectedTextColor = OnePlusRed, indicatorColor = SoftRed))
                 }
             }
         ) { padding ->
@@ -95,16 +106,22 @@ fun Phase3Screen() {
 
 @Composable
 private fun Panel(content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(26.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
     }
 }
 
 @Composable
 private fun Title(title: String, subtitle: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(subtitle, color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Ink)
+        Text(subtitle, color = Muted, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -114,8 +131,18 @@ private fun HomeTab(
     bluetoothOn: Boolean, status: String, connected: Boolean, snapshot: EarbudSnapshot,
     refresh: () -> Unit, connect: (BluetoothDevice) -> Unit, disconnect: () -> Unit
 ) {
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Title("Buds Control", "OnePlus Nord Buds 2R · Phase 4") }
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("BUDS CONTROL", color = OnePlusRed, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Title("Your earbuds", "OnePlus Nord Buds 2R")
+                }
+                Surface(shape = RoundedCornerShape(18.dp), color = SoftRed) {
+                    Icon(Icons.Default.Bluetooth, contentDescription = "Bluetooth", tint = OnePlusRed, modifier = Modifier.padding(14.dp).size(28.dp))
+                }
+            }
+        }
         item {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -123,7 +150,7 @@ private fun HomeTab(
                     Spacer(Modifier.width(10.dp))
                     Text(if (bluetoothOn) "Phone Bluetooth is ON" else "Phone Bluetooth is OFF", fontWeight = FontWeight.SemiBold)
                 }
-                Text(status, color = Color.Gray)
+                Text(status, color = Muted, style = MaterialTheme.typography.bodyMedium)
                 if (connected) OutlinedButton(onClick = disconnect) { Text("Disconnect") }
                 OutlinedButton(onClick = refresh) { Text("Refresh paired devices") }
                 snapshot.productId?.let {
@@ -141,7 +168,7 @@ private fun HomeTab(
                 Panel {
                     Text(device.name ?: "Unnamed device", fontWeight = FontWeight.SemiBold)
                     Text(device.address, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { connect(device) }, modifier = Modifier.fillMaxWidth()) { Text("Connect") }
+                    Button(onClick = { connect(device) }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(16.dp)) { Text("Connect") }
                 }
             }
         }
@@ -176,7 +203,7 @@ private fun SoundTab(
         }
     }
 
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Title("Sound Studio", "Built-in presets and custom 6-band EQ") }
         item {
             Panel {
@@ -266,7 +293,7 @@ private fun freqLabel(hz: Int): String = when (hz) {
 
 @Composable
 private fun BatteryTab(modifier: Modifier, snapshot: EarbudSnapshot) {
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Title("Battery Center", "Live device reports and low-battery alerts") }
         item {
             Panel {
@@ -291,7 +318,7 @@ private fun TouchTab(
     modifier: Modifier, snapshot: EarbudSnapshot, connected: Boolean,
     setBinding: (Int, Int, Int) -> Unit
 ) {
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Title("Touch Control Studio", "Configure left and right earbuds independently") }
         item {
             Panel {
@@ -364,7 +391,7 @@ private fun actionName(code: Int): String = when (code) {
 
 @Composable
 private fun ControlsTab(modifier: Modifier, snapshot: EarbudSnapshot, connected: Boolean, find: () -> Unit, stopFind: () -> Unit) {
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Title("Earbud Controls", "Model-gated features") }
         item {
             Panel {
