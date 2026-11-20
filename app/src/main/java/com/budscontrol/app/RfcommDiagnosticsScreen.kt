@@ -51,6 +51,10 @@ fun RfcommDiagnosticsScreen() {
             override fun onSnapshot(value: EarbudSnapshot) {
                 snapshot = value
             }
+
+            override fun onBatteryLevel(part: String, level: Int) {
+                // Read-only diagnostics screen does not issue battery notifications.
+            }
         })
     }
     DisposableEffect(client) {
